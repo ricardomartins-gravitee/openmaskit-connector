@@ -245,6 +245,7 @@ def test_connector_artifacts_are_packaged_on_all_platforms_and_released_after_ga
     assert "uv build --no-build-isolation --no-sources" in release_commands
     assert "--only-group release-build" in release_commands
     assert "gh release create" in release_commands
+    assert "--prerelease" in release_commands
     assert "SHA256SUMS.txt" in release_commands
     assert "ricardomartins-gravitee/openmaskit-connector" in release_commands
     assert "git ls-remote" in release_commands

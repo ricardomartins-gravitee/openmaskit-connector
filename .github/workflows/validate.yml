@@ -292,6 +292,7 @@ jobs:
           fi
           gh release create "$tag" downloads/*.zip downloads/connector-release.json downloads/SHA256SUMS.txt dist/python/* \
             --repo ricardomartins-gravitee/openmaskit-connector --target "$GITHUB_SHA" \
+            --prerelease \
             --title "OpenMaskit Connector $version" \
             --notes "Cross-platform connector executables and Python distributions."
         env:
