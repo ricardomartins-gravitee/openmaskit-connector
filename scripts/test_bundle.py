@@ -4,6 +4,7 @@ import os
 import platform
 import subprocess
 import sys
+from importlib.metadata import version
 from pathlib import Path
 
 root = Path(__file__).resolve().parents[1]
@@ -16,7 +17,10 @@ binary = (
         else "openmaskit-connector"
     )
 )
-subprocess.run([str(binary), "--version"], check=True)
+reported_version = subprocess.run(
+    [str(binary), "--version"], check=True, capture_output=True, text=True
+).stdout.strip()
+assert reported_version == version("openmaskit-connector")
 subprocess.run(
     [sys.executable, "-m", "pytest", "tests/test_bridge_integration.py", "-q"],
     cwd=root,

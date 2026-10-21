@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "connector_version": "0.1.0a2",
+  "connector_version": "0.1.0a3",
   "bridge_protocol": 1,
   "openmaskit_image": "ghcr.io/ricardomartins-gravitee/openmaskit@sha256:e360ede5313c532cef4805efcd9a5b8ea81e3425fb1cf14d2c78c094324d35e3",
   "presidio_version": "2.2.364",
