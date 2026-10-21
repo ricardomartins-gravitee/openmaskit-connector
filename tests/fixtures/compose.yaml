@@ -1,4 +1,4 @@
-name: openmaskit-companion
+name: openmaskit-connector
 services:
   openmaskit:
     image: ${OPENMASKIT_IMAGE:?Select a verified OpenMaskit image}
@@ -29,7 +29,7 @@ services:
       retries: 12
     networks: [private]
   connector-relay:
-    image: ${COMPANION_IMAGE:?Select a verified companion image}
+    image: ${CONNECTOR_IMAGE:?Select a verified connector relay image}
     user: "${LOCAL_UID:-10001}:${LOCAL_GID:-10001}"
     init: true
     restart: "no"

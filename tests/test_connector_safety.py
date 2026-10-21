@@ -6,7 +6,7 @@ from websockets.datastructures import Headers
 from websockets.exceptions import InvalidStatus
 from websockets.http11 import Response
 
-from openmaskit_companion import connector
+from openmaskit_connector import connector
 
 
 def state(home, profiles=None):

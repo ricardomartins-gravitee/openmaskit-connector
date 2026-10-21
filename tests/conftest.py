@@ -2,8 +2,8 @@ import secrets
 
 import pytest
 
-from openmaskit_companion.relay import create_app
-from openmaskit_companion.state import write_json
+from openmaskit_connector.relay import create_app
+from openmaskit_connector.state import write_json
 
 
 @pytest.fixture

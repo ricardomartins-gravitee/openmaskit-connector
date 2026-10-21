@@ -15,9 +15,9 @@ from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 from mcp.types import ListRootsResult, Root
 
-from openmaskit_companion.connector import channel
-from openmaskit_companion.relay import create_app
-from openmaskit_companion.state import write_json
+from openmaskit_connector.connector import channel
+from openmaskit_connector.relay import create_app
+from openmaskit_connector.state import write_json
 
 FIXTURE = Path(__file__).parent / "fixture_mcp.py"
 
@@ -89,7 +89,7 @@ async def paired_connector(tmp_path):
 
         async def bundled_channel():
             process = await asyncio.create_subprocess_exec(
-                os.environ["COMPANION_BINARY"],
+                os.environ["CONNECTOR_BINARY"],
                 "--home",
                 str(home),
                 "connect",
@@ -119,7 +119,7 @@ async def paired_connector(tmp_path):
 
         task = asyncio.create_task(
             bundled_channel()
-            if os.environ.get("COMPANION_BINARY")
+            if os.environ.get("CONNECTOR_BINARY")
             else channel(home, connected=ready)
         )
         try:

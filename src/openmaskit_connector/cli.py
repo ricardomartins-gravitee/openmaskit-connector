@@ -1,4 +1,4 @@
-"""Headless entry point, also used by the native companion app."""
+"""Portable command-line connector and relay; no desktop or Docker management."""
 
 from __future__ import annotations
 
@@ -9,30 +9,22 @@ import json
 import sys
 from pathlib import Path
 
-from . import __version__, manager
+from . import __version__
+from .pairing import RELAY
+from .pairing import pair as pair_connector
 from .state import Profile, default_home, identifier, read_json, write_json
 
 
 def parser():
     root = argparse.ArgumentParser(
-        description="Manage OpenMaskit and locally approved MCP connections"
+        description="Run locally approved MCP connections and the private relay"
     )
     root.add_argument("--home", type=Path, default=default_home())
     root.add_argument("--version", action="version", version=__version__)
     commands = root.add_subparsers(dest="action", required=True)
     commands.add_parser("status")
-    setup = commands.add_parser("setup")
-    setup.add_argument(
-        "--image",
-        required=True,
-        help="Companion release image, pinned by sha256 digest",
-    )
-    for action in ("start", "stop"):
-        commands.add_parser(action)
-    code = commands.add_parser("pairing-code")
-    code.add_argument("--name", default="My computer")
     pair = commands.add_parser("pair")
-    pair.add_argument("--endpoint", default=manager.RELAY)
+    pair.add_argument("--endpoint", default=RELAY)
     pair.add_argument(
         "--code-stdin",
         action="store_true",
@@ -56,11 +48,6 @@ def parser():
     forget.add_argument("id", type=identifier)
     commands.add_parser("profiles")
     commands.add_parser("connect")
-    revoke = commands.add_parser("revoke")
-    revoke.add_argument("id", type=identifier)
-    register = commands.add_parser("register")
-    register.add_argument("id", type=identifier)
-    register.add_argument("--name", required=True)
     relay = commands.add_parser("relay")
     relay.add_argument("--state", type=Path, required=True)
     relay.add_argument("--host", default="127.0.0.1")
@@ -73,24 +60,23 @@ def main(argv=None):
     home = args.home.expanduser().absolute()
     try:
         if args.action == "status":
-            result = manager.status(home)
-        elif args.action == "setup":
-            result = manager.initialize(home, args.image)
-        elif args.action == "start":
-            manager.compose(home, "up", "--detach", "--wait", "--wait-timeout", "300")
-            result = manager.status(home)
-        elif args.action == "stop":
-            manager.compose(home, "stop", "--timeout", "45")
-            result = manager.status(home)
-        elif args.action == "pairing-code":
-            result = manager.admin(home, "POST", "/admin/pairings", {"name": args.name})
+            from .connector import profiles
+
+            result = {
+                "paired": (home / "connection.json").is_file(),
+                "protocol": 1,
+                "profiles": [
+                    {"id": key, "name": value.name}
+                    for key, value in profiles(home).items()
+                ],
+            }
         elif args.action == "pair":
             code = (
                 sys.stdin.readline().strip()
                 if args.code_stdin
                 else getpass.getpass("Pairing code: ")
             )
-            result = manager.pair(home, args.endpoint, code)
+            result = pair_connector(home, args.endpoint, code)
         elif args.action == "approve":
             raw = json.loads(args.profile.read_text())
             raw["name"] = args.name
@@ -131,14 +117,6 @@ def main(argv=None):
 
             asyncio.run(run(home))
             return
-        elif args.action == "revoke":
-            result = manager.admin(home, "POST", "/admin/revoke", {"id": args.id})
-        elif args.action == "register":
-            from .connector import profiles
-
-            if args.id not in profiles(home):
-                raise ValueError("Approve this MCP locally before registering it")
-            result = manager.register_target(home, args.id, args.name)
         elif args.action == "relay":
             import uvicorn
 

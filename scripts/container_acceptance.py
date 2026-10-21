@@ -17,8 +17,8 @@ import httpx
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 
-from openmaskit_companion.connector import channel
-from openmaskit_companion.state import write_json
+from openmaskit_connector.connector import channel
+from openmaskit_connector.state import write_json
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -42,19 +42,17 @@ async def main(image):
         root = Path(directory)
         root.chmod(0o700)
         web, mcp, relay = ports()
-        template = (ROOT / "src/openmaskit_companion/data/compose.yaml").read_text()
+        template = (ROOT / "tests/fixtures/compose.yaml").read_text()
         template = template.replace("9493", str(web)).replace("9494", str(mcp))
         template = template.replace(
             '"127.0.0.1:9495:9495"', f'"127.0.0.1:{relay}:9495"'
         )
         (root / "compose.yaml").write_text(template)
-        release = json.loads(
-            (ROOT / "src/openmaskit_companion/data/release.json").read_text()
-        )
+        release = json.loads((ROOT / "tests/fixtures/release.json").read_text())
         environment = {
             **os.environ,
             "OPENMASKIT_IMAGE": release["openmaskit_image"],
-            "COMPANION_IMAGE": image,
+            "CONNECTOR_IMAGE": image,
             "LOCAL_UID": str(os.getuid() if hasattr(os, "getuid") else 10001),
             "LOCAL_GID": str(os.getgid() if hasattr(os, "getgid") else 10001),
         }
@@ -68,7 +66,7 @@ async def main(image):
             docker,
             "compose",
             "--project-name",
-            "companion-acceptance-" + secrets.token_hex(4),
+            "connector-acceptance-" + secrets.token_hex(4),
             "--project-directory",
             str(root),
             "--file",
@@ -232,5 +230,5 @@ async def main(image):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--image", default="openmaskit-companion:candidate")
+    parser.add_argument("--image", default="openmaskit-connector:candidate")
     asyncio.run(main(parser.parse_args().image))

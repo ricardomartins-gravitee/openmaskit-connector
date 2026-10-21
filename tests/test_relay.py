@@ -4,7 +4,7 @@ import pytest
 from starlette.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
-from openmaskit_companion.relay import digest
+from openmaskit_connector.relay import digest
 
 
 def paired(client, settings):

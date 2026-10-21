@@ -2,6 +2,7 @@ import hashlib
 import importlib.util
 import io
 import json
+import sys
 import tarfile
 import zipfile
 from pathlib import Path
@@ -287,3 +288,22 @@ def test_sbom_rejects_wrong_or_unrecognized_native_openssl(
     monkeypatch.setattr(backend, "openssl_version_text", lambda: version)
     with pytest.raises(ValueError):
         wheel.sbom(tmp_path)
+
+
+def test_seal_cli_prefers_explicit_source_revision_to_caller_revision(
+    tmp_path, monkeypatch
+):
+    directory = tmp_path / "intel-wheel"
+    directory.mkdir()
+    monkeypatch.setenv("RUNNER_TEMP", str(tmp_path))
+    monkeypatch.setenv("SOURCE_REVISION", COMMIT)
+    monkeypatch.setenv("GITHUB_SHA", "b" * 40)
+    monkeypatch.setattr(sys, "argv", ["intel_wheel.py", "seal", str(directory)])
+    recorded = []
+    monkeypatch.setattr(
+        wheel, "seal", lambda path, revision: recorded.append((path, revision))
+    )
+
+    wheel.main()
+
+    assert recorded == [(directory, COMMIT)]

@@ -9,17 +9,17 @@ from pathlib import Path
 root = Path(__file__).resolve().parents[1]
 binary = (
     root
-    / "dist/openmaskit-companion"
+    / "dist/openmaskit-connector"
     / (
-        "openmaskit-companion.exe"
+        "openmaskit-connector.exe"
         if platform.system() == "Windows"
-        else "openmaskit-companion"
+        else "openmaskit-connector"
     )
 )
 subprocess.run([str(binary), "--version"], check=True)
 subprocess.run(
     [sys.executable, "-m", "pytest", "tests/test_bridge_integration.py", "-q"],
     cwd=root,
-    env={**os.environ, "COMPANION_BINARY": str(binary)},
+    env={**os.environ, "CONNECTOR_BINARY": str(binary)},
     check=True,
 )

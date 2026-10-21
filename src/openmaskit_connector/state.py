@@ -70,7 +70,7 @@ class Profile(BaseModel):
 
 
 def default_home() -> Path:
-    return Path.home() / ".openmaskit-companion"
+    return Path.home() / ".openmaskit-connector"
 
 
 def private_dir(path: Path) -> Path:

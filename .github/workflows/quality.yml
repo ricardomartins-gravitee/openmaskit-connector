@@ -46,7 +46,7 @@ jobs:
       - name: Analyze production Python security
         run: uv run --frozen --no-sync --no-build bandit --recursive src --format json --output bandit.json
       - name: Enforce coverage threshold including branches
-        run: uv run --frozen --no-sync --no-build pytest -q --cov=openmaskit_companion --cov-branch --cov-report=term-missing --cov-report=xml:coverage.xml --cov-report=html:htmlcov
+        run: uv run --frozen --no-sync --no-build pytest -q --cov=openmaskit_connector --cov-branch --cov-report=term-missing --cov-report=xml:coverage.xml --cov-report=html:htmlcov
       - name: Export all locked dependencies for auditing
         run: uv export --frozen --all-groups --no-emit-project --format requirements-txt > requirements-audit.txt
       - name: Audit locked runtime and development dependencies

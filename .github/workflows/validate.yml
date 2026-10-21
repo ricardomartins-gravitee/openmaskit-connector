@@ -1,4 +1,4 @@
-name: Validate and package
+name: Validate and package connector
 on:
   push:
     branches: [main]
@@ -8,7 +8,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: companion-${{ github.event.pull_request.number || github.ref }}
+  group: connector-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -28,19 +28,23 @@ jobs:
 
   test:
     needs: intel-wheel
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-24.04, macos-26, macos-15-intel, windows-2025]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           version: '0.13.1'
       - if: matrix.os != 'macos-15-intel'
-        run: uv sync --frozen --no-build --python 3.12 --group dev
+        run: uv sync --frozen --no-build --python 3.12 --group dev --group bundle
       - if: matrix.os == 'macos-15-intel'
         name: Install binary dependencies without cryptography
         run: uv sync --frozen --no-build --python 3.12 --group dev --group bundle --no-install-package cryptography
@@ -56,17 +60,21 @@ jobs:
           uv pip install --python .venv/bin/python --no-deps --no-build --require-hashes --requirement "$RUNNER_TEMP/intel-wheel/install.txt"
           uv run --frozen --no-sync --no-build python scripts/test_crypto.py
       - run: uv run --frozen --no-sync --no-build pytest -q
-      - if: runner.os == 'macOS'
-        name: Lint Swift sources and tests
-        run: swift format lint --strict --recursive desktop/macos/Sources desktop/macos/Tests desktop/macos/Package.swift
-      - if: runner.os == 'macOS'
-        run: swift test --package-path desktop/macos
-      - if: matrix.os == 'macos-15-intel'
-        name: Build an Intel development app with the verified wheel before merge
+      - name: Build the connector executable
         run: uv run --frozen --no-sync --no-build python scripts/bundle.py
-      - if: matrix.os == 'macos-15-intel'
-        name: Exercise the packaged Intel connector before merge
+      - name: Exercise the packaged connector bridge
         run: uv run --frozen --no-sync --no-build python scripts/test_bundle.py
+      - name: Archive executable and checksum
+        run: uv run --frozen --no-sync --no-build python scripts/archive.py
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        if: github.repository == 'ricardomartins-gravitee/openmaskit-connector' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        with:
+          subject-path: dist/downloads/*
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: connector-${{ matrix.os }}
+          path: dist/downloads/*.zip
+          retention-days: 14
 
   image:
     needs: [quality, security]
@@ -87,12 +95,12 @@ jobs:
           version: '0.13.1'
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - run: uv sync --frozen --no-build --python 3.12 --group dev
-      - name: Build native image
-        run: docker buildx build --load --provenance=false --pull --tag openmaskit-companion:candidate .
+      - name: Build native connector image
+        run: docker buildx build --load --provenance=false --pull --tag openmaskit-connector:candidate .
       - name: Scan the actual image for vulnerabilities and secrets
         uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
         with:
-          image-ref: openmaskit-companion:candidate
+          image-ref: openmaskit-connector:candidate
           version: v0.70.0
           scanners: vuln,secret
           severity: HIGH,CRITICAL
@@ -105,11 +113,11 @@ jobs:
       - name: Print redacted image scan summary
         if: always()
         run: python3 scripts/security_report.py "${{ runner.temp }}/trivy-image.json"
-      - name: Real OpenMaskit, Presidio and host MCP acceptance
-        run: uv run --frozen --no-sync --no-build python scripts/container_acceptance.py --image openmaskit-companion:candidate
+      - name: Exercise connector relay in the actual image
+        run: uv run --frozen --no-sync --no-build python scripts/container_acceptance.py --image openmaskit-connector:candidate
       - name: Save tested image
         if: github.event_name != 'pull_request'
-        run: docker save openmaskit-companion:candidate | gzip > image.tar.gz
+        run: docker save openmaskit-connector:candidate | gzip > image.tar.gz
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: github.event_name != 'pull_request'
         with:
@@ -118,7 +126,7 @@ jobs:
           retention-days: 3
 
   native-release:
-    if: github.repository == 'ricardomartins-gravitee/openmaskit-companion' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    if: github.repository == 'ricardomartins-gravitee/openmaskit-connector' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     needs: [test, image, quality, security, intel-wheel]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -159,13 +167,13 @@ jobs:
           BUILD_KEY: ${{ needs.intel-wheel.outputs.build-key }}
         run: |
           gh release create "native-intel-$BUILD_KEY" "$RUNNER_TEMP/intel-native-library.zip" \
-            --repo ricardomartins-gravitee/openmaskit-companion --target "$GITHUB_SHA" \
+            --repo ricardomartins-gravitee/openmaskit-connector --target "$GITHUB_SHA" \
             --prerelease --title "Intel native dependency $BUILD_KEY" \
-            --notes-file docs/native-dependency-release.md
+            --notes "Verified native library for the connector's pinned Intel build inputs."
 
   publish:
-    if: github.repository == 'ricardomartins-gravitee/openmaskit-companion' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-    needs: [test, image, quality, security, intel-wheel]
+    if: github.repository == 'ricardomartins-gravitee/openmaskit-connector' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: [test, image, quality, security, intel-wheel, native-release]
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -190,35 +198,29 @@ jobs:
           SOURCE_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          image=ghcr.io/ricardomartins-gravitee/openmaskit-companion
+          image=ghcr.io/ricardomartins-gravitee/openmaskit-connector
           for arch in amd64 arm64; do
             gzip -dc "image-$arch/image.tar.gz" | docker load
-            docker tag openmaskit-companion:candidate "$image:sha-$SOURCE_SHA-$arch"
+            docker tag openmaskit-connector:candidate "$image:sha-$SOURCE_SHA-$arch"
             docker push "$image:sha-$SOURCE_SHA-$arch"
           done
-          if ! docker buildx imagetools inspect "$image:sha-$SOURCE_SHA" >/dev/null 2>&1; then
-            docker buildx imagetools create --tag "$image:sha-$SOURCE_SHA" "$image:sha-$SOURCE_SHA-amd64" "$image:sha-$SOURCE_SHA-arm64"
-          fi
+          docker buildx imagetools create --tag "$image:sha-$SOURCE_SHA" "$image:sha-$SOURCE_SHA-amd64" "$image:sha-$SOURCE_SHA-arm64"
           digest=$(docker buildx imagetools inspect "$image:sha-$SOURCE_SHA" --format '{{json .Manifest.Digest}}' | tr -d '"')
           echo "image=$image@$digest" >> "$GITHUB_OUTPUT"
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
-          echo "Tested relay image: \`$image@$digest\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "Tested connector image: \`$image@$digest\`" >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
-          subject-name: ghcr.io/ricardomartins-gravitee/openmaskit-companion
+          subject-name: ghcr.io/ricardomartins-gravitee/openmaskit-connector
           subject-digest: ${{ steps.publish.outputs.digest }}
           push-to-registry: true
 
-  package:
-    needs: [publish, native-release]
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-24.04, macos-26, macos-15-intel, windows-2025]
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
+  release:
+    if: github.repository == 'ricardomartins-gravitee/openmaskit-connector' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: [test, image, quality, security, intel-wheel, native-release, publish]
+    runs-on: ubuntu-24.04
     permissions:
-      contents: read
+      contents: write
       id-token: write
       attestations: write
     steps:
@@ -226,46 +228,71 @@ jobs:
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           version: '0.13.1'
-      - if: matrix.os != 'macos-15-intel'
-        run: uv sync --frozen --no-build --python 3.12 --group dev --group bundle
-      - if: matrix.os == 'macos-15-intel'
-        name: Install binary build dependencies without cryptography
-        run: uv sync --frozen --no-build --python 3.12 --group dev --group bundle --no-install-package cryptography
-      - if: matrix.os == 'macos-15-intel'
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+      - run: uv sync --frozen --no-build --python 3.12 --only-group release-build
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: intel-cryptography-wheel
-          path: ${{ runner.temp }}/intel-wheel
-      - if: matrix.os == 'macos-15-intel'
-        name: Verify and install the same-run Intel wheel
+          pattern: connector-*
+          merge-multiple: true
+          path: downloads
+      - name: Build the versioned connector wheel and source archive
+        run: uv build --no-build-isolation --no-sources --out-dir dist/python
+      - name: Record the attested relay image for companion consumers
+        env:
+          RELAY_IMAGE: ${{ needs.publish.outputs.image }}
+          SOURCE_COMMIT: ${{ github.sha }}
         run: |
-          uv run --frozen --no-sync --no-build python scripts/intel_wheel.py prepare "$RUNNER_TEMP/intel-wheel"
-          uv pip install --python .venv/bin/python --no-deps --no-build --require-hashes --requirement "$RUNNER_TEMP/intel-wheel/install.txt"
-          uv run --frozen --no-sync --no-build python scripts/test_crypto.py
-      - name: Exercise actual managed installation lifecycle
-        if: runner.os == 'Linux'
-        env:
-          RELAY_IMAGE: ${{ needs.publish.outputs.image }}
-        run: uv run --frozen --no-sync --no-build python scripts/manager_acceptance.py --image "$RELAY_IMAGE"
-      - name: Build development download
-        env:
-          RELAY_IMAGE: ${{ needs.publish.outputs.image }}
-        run: uv run --frozen --no-sync --no-build python scripts/bundle.py --image "$env:RELAY_IMAGE"
-        if: runner.os == 'Windows'
-      - name: Build development download
-        env:
-          RELAY_IMAGE: ${{ needs.publish.outputs.image }}
-        run: uv run --frozen --no-sync --no-build python scripts/bundle.py --image "$RELAY_IMAGE"
-        if: runner.os != 'Windows'
-      - name: Exercise the bundled connector
-        run: uv run --frozen --no-sync --no-build python scripts/test_bundle.py
-      - name: Archive development downloads and checksums
-        run: uv run --frozen --no-sync --no-build python scripts/archive.py
+          mkdir -p downloads
+          python3 - <<'PY'
+          import json
+          import os
+          import subprocess
+          from pathlib import Path
+
+          metadata = {
+              "schema": 1,
+              "protocol": 1,
+              "version": subprocess.check_output(["uv", "version", "--short"], text=True).strip(),
+              "commit": os.environ["SOURCE_COMMIT"],
+              "relay_image": os.environ["RELAY_IMAGE"],
+          }
+          Path("downloads/connector-release.json").write_text(
+              json.dumps(metadata, sort_keys=True, separators=(",", ":")) + "\n"
+          )
+          PY
+      - name: Create checksums for Python and executable releases
+        run: |
+          python3 - <<'PY'
+          import hashlib
+          from pathlib import Path
+          files = sorted(Path("downloads").glob("*.zip")) + [Path("downloads/connector-release.json")] + sorted(Path("dist/python").glob("*"))
+          Path("downloads/SHA256SUMS.txt").write_text("".join(f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}\n" for path in files))
+          PY
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
-          subject-path: dist/downloads/*
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: development-${{ matrix.os }}
-          path: dist/downloads/*
-          retention-days: 14
+          subject-path: |
+            dist/python/*
+            downloads/connector-release.json
+            downloads/SHA256SUMS.txt
+      - name: Publish immutable versioned connector release
+        run: |
+          set -euo pipefail
+          version=$(uv version --short)
+          tag="connector-v$version"
+          if git ls-remote --exit-code origin "refs/tags/$tag" >/dev/null 2>&1; then
+            git fetch --no-tags origin "refs/tags/$tag:refs/tags/$tag"
+            existing_commit=$(git rev-parse "$tag^{commit}")
+            if [[ "$existing_commit" != "$GITHUB_SHA" ]]; then
+              echo "::error::Connector version $version is already tagged to $existing_commit. Bump the project version before publishing this commit."
+              exit 1
+            fi
+            if gh release view "$tag" --repo ricardomartins-gravitee/openmaskit-connector >/dev/null 2>&1; then
+              echo "Version $version for this exact source commit already has an immutable connector release."
+              exit 0
+            fi
+          fi
+          gh release create "$tag" downloads/*.zip downloads/connector-release.json downloads/SHA256SUMS.txt dist/python/* \
+            --repo ricardomartins-gravitee/openmaskit-connector --target "$GITHUB_SHA" \
+            --title "OpenMaskit Connector $version" \
+            --notes "Cross-platform connector executables and Python distributions."
+        env:
+          GH_TOKEN: ${{ github.token }}

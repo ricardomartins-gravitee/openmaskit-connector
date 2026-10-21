@@ -111,7 +111,7 @@ def mock_release(tmp_path, monkeypatch):
             }
         ],
     }
-    monkeypatch.setattr(wheel, "github_json", lambda path: release)
+    monkeypatch.setattr(wheel, "github_json", lambda path, **kwargs: release)
 
     class Opener:
         def open(self, actual, timeout):
@@ -125,6 +125,8 @@ def mock_release(tmp_path, monkeypatch):
 def test_release_reuse_requires_main_workflow_and_hosted_provenance(
     tmp_path, monkeypatch
 ):
+    assert wheel.REPOSITORY == "ricardomartins-gravitee/openmaskit-connector"
+    assert wheel.BOOTSTRAP_REPOSITORY == "ricardomartins-gravitee/openmaskit-companion"
     mock_release(tmp_path, monkeypatch)
     calls = []
     monkeypatch.setattr(
@@ -206,19 +208,21 @@ def mock_bootstrap(tmp_path, monkeypatch):
         "conclusion": "success",
         "name": "intel-wheel / Build and verify Intel dependency",
     }
-    monkeypatch.setattr(
-        wheel,
-        "github_json",
-        lambda path: (
+    requests = []
+
+    def github_json(path, *, repository=wheel.REPOSITORY):
+        requests.append((path, repository))
+        return (
             producer
             if "/jobs/" in path
             else {"artifacts": [{"name": "intel-cryptography-wheel", "expired": False}]}
-        ),
-    )
+        )
+
+    monkeypatch.setattr(wheel, "github_json", github_json)
 
     def download(args, **kwargs):
         assert args[:4] == ["gh", "run", "download", "456"]
-        assert args[args.index("--repo") + 1] == wheel.REPOSITORY
+        assert args[args.index("--repo") + 1] == wheel.BOOTSTRAP_REPOSITORY
         destination = next(
             a.removeprefix("--dir=") for a in args if a.startswith("--dir=")
         )
@@ -226,13 +230,17 @@ def mock_bootstrap(tmp_path, monkeypatch):
         shutil.copytree(original, Path(destination))
 
     monkeypatch.setattr(wheel.subprocess, "run", download)
-    return pin, producer
+    return pin, producer, requests
 
 
 def test_exact_successful_bootstrap_build_is_reused(tmp_path, monkeypatch):
-    mock_bootstrap(tmp_path, monkeypatch)
+    _, _, requests = mock_bootstrap(tmp_path, monkeypatch)
     directory = tmp_path / "restored"
     assert wheel.restore_bootstrap(directory)
+    assert requests == [
+        ("actions/jobs/123", wheel.BOOTSTRAP_REPOSITORY),
+        ("actions/runs/456/artifacts", wheel.BOOTSTRAP_REPOSITORY),
+    ]
     assert (
         json.loads((directory / "manifest.json").read_text())["build_key"]
         == wheel.build_key()
@@ -245,14 +253,14 @@ def test_exact_successful_bootstrap_build_is_reused(tmp_path, monkeypatch):
 def test_bootstrap_rejects_wrong_or_failed_producer(
     tmp_path, monkeypatch, field, value
 ):
-    _, producer = mock_bootstrap(tmp_path, monkeypatch)
+    _, producer, _ = mock_bootstrap(tmp_path, monkeypatch)
     producer[field] = value
     with pytest.raises(ValueError, match="producer"):
         wheel.restore_bootstrap(tmp_path / "restored")
 
 
 def test_bootstrap_rejects_unpinned_bytes(tmp_path, monkeypatch):
-    pin, _ = mock_bootstrap(tmp_path, monkeypatch)
+    pin, _, _ = mock_bootstrap(tmp_path, monkeypatch)
     pin["wheel_sha256"] = "0" * 64
     (wheel.ROOT / "dependencies/intel-bootstrap.json").write_text(json.dumps(pin))
     with pytest.raises(ValueError, match="checksum"):
@@ -260,18 +268,18 @@ def test_bootstrap_rejects_unpinned_bytes(tmp_path, monkeypatch):
 
 
 def test_expired_seed_permits_a_source_build(tmp_path, monkeypatch):
-    _, producer = mock_bootstrap(tmp_path, monkeypatch)
+    _, producer, _ = mock_bootstrap(tmp_path, monkeypatch)
     monkeypatch.setattr(
         wheel,
         "github_json",
-        lambda path: producer if "/jobs/" in path else {"artifacts": []},
+        lambda path, **kwargs: producer if "/jobs/" in path else {"artifacts": []},
     )
     assert not wheel.restore_bootstrap(tmp_path / "restored")
     assert not (tmp_path / "restored").exists()
 
 
 def test_changed_library_inputs_never_use_the_old_seed(tmp_path, monkeypatch):
-    pin, _ = mock_bootstrap(tmp_path, monkeypatch)
+    pin, _, _ = mock_bootstrap(tmp_path, monkeypatch)
     pin["input_fingerprint"] = "0" * 64
     (wheel.ROOT / "dependencies/intel-bootstrap.json").write_text(json.dumps(pin))
     assert not wheel.restore_bootstrap(tmp_path / "restored")

@@ -1,7 +1,7 @@
 [project]
-name = "openmaskit-companion"
+name = "openmaskit-connector"
 version = "0.1.0a1"
-description = "Desktop manager and outbound local MCP connector for OpenMaskit"
+description = "Portable local MCP connector and private relay for OpenMaskit"
 requires-python = ">=3.12"
 license = "Apache-2.0"
 dependencies = [
@@ -14,7 +14,7 @@ dependencies = [
 ]
 
 [project.scripts]
-openmaskit-companion = "openmaskit_companion.cli:main"
+openmaskit-connector = "openmaskit_connector.cli:main"
 
 [build-system]
 requires = ["hatchling"]
@@ -37,6 +37,9 @@ intel-build = [
     "packaging>=26",
     "setuptools>=82",
 ]
+release-build = [
+    "hatchling>=1.27,<2",
+]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
@@ -51,7 +54,7 @@ select = ["E4", "E7", "E9", "F", "I"]
 [tool.coverage.run]
 branch = true
 relative_files = true
-source = ["src/openmaskit_companion"]
+source = ["src/openmaskit_connector"]
 
 [tool.coverage.report]
 fail_under = 80

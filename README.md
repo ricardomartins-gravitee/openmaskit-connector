@@ -1,103 +1,81 @@
-# OpenMaskit Companion
+# OpenMaskit Connector
 
-An optional desktop manager and outbound connector for local MCP servers.
-Works with OpenMaskit through its existing HTTP MCP support. This is a separate
-project, not a renamed OpenMaskit distribution, and is not endorsed by upstream.
+OpenMaskit Connector is a portable host-side connector for locally approved MCP
+servers, paired with a private relay that exposes those servers to OpenMaskit
+through its existing Streamable HTTP support. It is a separate project and is
+not an OpenMaskit distribution or an upstream-endorsed product.
 
-**Development alpha.** The relay and connector are under active validation.
-The macOS application is a development build until signed and notarized.
-Automatic installation, login startup and automatic updates are not enabled.
+**Development alpha.** Protocol version 1 and the relay are under active
+validation. Releases are not a substitute for review of the local MCP programs
+you approve. The connector does not sandbox those programs.
 
-The macOS app's **Settings** screen includes independent options to show a menu
-bar icon and to keep running in the menu bar when the main window closes. Closing
-to the menu bar hides the Dock icon; the menu can reopen the window or quit. Both
-options are off initially and saved when changed. Monitoring continues while the
-window is hidden. Quitting stops the local connector; managed containers retain
-their normal running state until explicitly stopped.
+The connector opens an authenticated outbound WebSocket to the relay. It does
+not expose an inbound service on the host. AI clients connect to OpenMaskit;
+they do not connect directly to this relay. OpenMaskit applies its configured
+privacy checks to the forwarded MCP traffic.
 
-## Components
+## Use with the macOS companion
 
-- **Native macOS app:** setup, status, start/stop, pairing and connector supervision.
-- **Standalone connector:** launches only MCP profiles approved locally; opens an
-  authenticated outbound WebSocket to the local relay. No inbound host service.
-- **Private relay container:** forwards complete MCP sessions and exposes standard
-  Streamable HTTP to OpenMaskit. No changes to the OpenMaskit fork are required.
-- **Managed stack:** OpenMaskit, Presidio and relay, on ports 9493/9494/9495. Separate
-  project and persistent storage; no adoption of existing services or mail data.
-
-Raw results enter your local OpenMaskit container before masking. AI clients
-connect to OpenMaskit, never directly to the relay. No Docker socket is mounted.
+The OpenMaskit Companion project owns the native macOS manager and its managed
+OpenMaskit/Presidio installation. It consumes a pinned connector release and
+passes the existing `~/.openmaskit-companion/` directory explicitly, preserving
+the user's pairing and approved profiles. The standalone connector defaults to
+`~/.openmaskit-connector/`; it does not manage Docker, OpenMaskit or Presidio.
 
 ## Run from source
 
-Install [uv](https://docs.astral.sh/uv/getting-started/installation/) and open
-Docker Desktop. Clone this repository, then:
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/), then:
 
 ```sh
 uv sync --frozen
-uv run --frozen openmaskit-companion status
+uv run --frozen openmaskit-connector --help
 ```
 
-State defaults to `~/.openmaskit-companion/`; use `--home /absolute/path` before
-the command for an isolated installation. Each new installation gets its own
-Docker project and data volume; the fixed service ports must still be available.
-State directories are mode 0700 and
-files containing credentials are mode 0600 on POSIX. Do not publish this directory.
-Windows requires a private user-profile directory and appropriate account ACLs.
+Use `--home /absolute/path` before a command to select a private state
+directory. State directories are mode 0700 and credential files mode 0600 on
+POSIX. Protect the selected directory with appropriate account permissions on
+other platforms.
 
-### Managed installation
+Pairing requires a short-lived code created by the relay's local administrator.
+The code is single-use and expires after two minutes. The `pair` command prompts
+for it. A paired connector receives a per-device credential; the relay retains
+only its hash.
 
-Use the immutable companion image digest published by a tested release:
+## Approve a local MCP
+
+Create a private JSON profile and review it locally. It contains an absolute
+`command` path, an `args` array, and optional `env` and `cwd` values. Then approve
+it explicitly and run the connector:
 
 ```sh
-uv run openmaskit-companion setup --image ghcr.io/ricardomartins-gravitee/openmaskit-companion@sha256:RELEASE_DIGEST
-uv run openmaskit-companion start
-uv run openmaskit-companion pairing-code --name 'My computer'
-uv run openmaskit-companion pair
+uv run openmaskit-connector approve my-mcp --name 'My local MCP' --profile /absolute/path/profile.json
+uv run openmaskit-connector connect
 ```
 
-The pairing command prompts for the short-lived code. It is single-use and
-expires after two minutes. Start a new pairing if it expires. Existing private
-settings are not imported. Stop with `openmaskit-companion stop`; data is retained.
+The program runs with your user permissions. The connector does not install the
+MCP server or its dependencies. Profile changes apply on the next connector
+connection; stop the connector first for immediate local removal. Revoking a
+paired identity closes its active channel and sessions.
 
-### Approve a local MCP
+The companion's manager registers an approved profile in OpenMaskit using the
+relay's standard HTTP endpoint and the existing OpenMaskit HTTP MCP support. The
+standalone connector does not install or configure OpenMaskit, Presidio or any
+other application.
 
-Create a private JSON file with `command` (an absolute path), `args`, optional
-`env` and `cwd`. Review it locally, then approve it:
+## Security and acceptance
 
-```sh
-uv run openmaskit-companion approve my-mcp --name 'My local MCP' --profile /absolute/path/profile.json
-uv run openmaskit-companion connect
-```
+See [architecture and trust boundaries](docs/architecture.md),
+[development and acceptance](docs/development.md),
+[security checks](docs/security-checks.md), and the
+[Intel macOS dependency build](docs/intel-wheel.md).
 
-Keep the connector running. From another terminal, register the approved profile
-in the companion-managed OpenMaskit:
+Host launch settings never come from the relay. MCP messages are not logged or
+persisted for replay. A disconnect can leave a side-effecting call's outcome
+uncertain; callers must not automatically retry such calls. The relay uses
+loopback-only published ports in this release. Remote TLS deployments require a
+separate design and acceptance.
 
-```sh
-uv run openmaskit-companion register my-mcp --name 'My local MCP'
-```
-
-Open **http://127.0.0.1:9493** to configure masking and privacy checks. Add Presidio
-as `http://presidio-analyzer:3000`. The connector does not install Thunderbird,
-its extension, Node, Python or any other MCP's dependencies. Programs run with
-your user permissions, not in a sandbox. Reconnect after changing approved
-profiles. `forget` affects the next connector connection; stop the connector
-first for immediate local removal. `revoke` immediately closes a paired computer.
-
-## Distribution and verification
-
-See [architecture and security](docs/architecture.md),
-[development and acceptance](docs/development.md), and
-[update design](docs/updates.md). GitHub builds the headless tool and macOS app
-from locked dependencies. Releases retain checksums and source provenance.
-No claim of Apple signing/notarization is made for development artifacts.
-
-Publication also requires [code quality and security checks](docs/security-checks.md):
-Trivy, Gitleaks, Ruff, Bandit, dependency auditing, native Swift lint, and measured
-test coverage. The repository also has an active [SonarQube Cloud project](https://sonarcloud.io/project/overview?id=ricardomartins-gravitee_openmaskit-companion)
-using automatic analysis on the default branch and active pull requests. It does
-not import the coverage report; see [the SonarQube setup](docs/sonarqube.md).
-
-This project's initial scope is macOS with Docker Desktop on the same computer.
-The connector core is portable; remote deployments, native Windows/Linux apps,
-OS keychain integration and automatic updates need separate acceptance.
+GitHub validation covers Linux, Windows and Apple Silicon/Intel macOS connector
+builds. Container acceptance uses synthetic data and a disposable Compose
+project. It does not use a user's mailbox or manage their installed services.
+There is no automatic local installation, login startup or automatic updater.

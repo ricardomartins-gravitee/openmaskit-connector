@@ -27,6 +27,16 @@ def test_security_and_quality_are_required_before_publishing():
         "quality",
         "security",
         "intel-wheel",
+        "native-release",
+    }
+    assert set(jobs["release"]["needs"]) == {
+        "test",
+        "image",
+        "quality",
+        "security",
+        "intel-wheel",
+        "native-release",
+        "publish",
     }
     for name in ("quality", "security"):
         assert jobs[name]["uses"] == f"./.github/workflows/{name}.yml"
@@ -48,7 +58,7 @@ def test_workflows_pin_external_actions_and_do_not_ignore_failures():
 def test_coverage_gate_includes_all_production_code_and_branches():
     config = tomllib.loads((ROOT / "pyproject.toml").read_text())["tool"]["coverage"]
     assert config["run"]["branch"] is True
-    assert config["run"]["source"] == ["src/openmaskit_companion"]
+    assert config["run"]["source"] == ["src/openmaskit_connector"]
     assert config["report"]["fail_under"] >= 80
     assert "omit" not in config["run"]
 
@@ -76,6 +86,8 @@ def test_intel_compilation_is_explicit_isolated_scanned_and_reused_in_same_run()
     test_commands = "\n".join(s.get("run", "") for s in jobs["test"]["steps"])
     assert "scripts/bundle.py" in test_commands
     assert "scripts/test_bundle.py" in test_commands
+    assert "desktop/macos" not in test_commands
+    assert "manager_acceptance.py" not in test_commands
     builder = workflow("intel-wheel.yml")["jobs"]["wheel"]
     assert builder["runs-on"] == "macos-15-intel"
     assert builder["env"]["OPENSSL_STATIC"] == "1"
@@ -115,23 +127,44 @@ def test_intel_compilation_is_explicit_isolated_scanned_and_reused_in_same_run()
         assert scan["exit-code"] == "1"
         assert scan["ignore-unfixed"] == "false"
         assert scan["severity"] == "HIGH,CRITICAL"
-    for name in ("test", "package"):
-        steps = jobs[name]["steps"]
-        downloads = [s for s in steps if "download-artifact@" in s.get("uses", "")]
-        assert len(downloads) == 1
-        assert downloads[0]["if"] == "matrix.os == 'macos-15-intel'"
-        assert downloads[0]["with"]["name"] == "intel-cryptography-wheel"
-        assert "run-id" not in downloads[0]["with"]
-        commands = "\n".join(step.get("run", "") for step in steps)
-        assert "--no-install-package cryptography" in commands
-        assert "scripts/intel_wheel.py prepare" in commands
-        assert "scripts/test_crypto.py" in commands
-    for job in [builder, jobs["test"], jobs["package"]]:
+    steps = jobs["test"]["steps"]
+    downloads = [s for s in steps if "download-artifact@" in s.get("uses", "")]
+    assert len(downloads) == 1
+    assert downloads[0]["if"] == "matrix.os == 'macos-15-intel'"
+    assert downloads[0]["with"]["name"] == "intel-cryptography-wheel"
+    assert "run-id" not in downloads[0]["with"]
+    commands = "\n".join(step.get("run", "") for step in steps)
+    assert "--no-install-package cryptography" in commands
+    assert "scripts/intel_wheel.py prepare" in commands
+    assert "scripts/test_crypto.py" in commands
+    for job in [builder, jobs["test"]]:
         for step in job["steps"]:
             for command in re.findall(r"\buv pip install\b[^\n]*", step.get("run", "")):
                 assert "--no-build" in command
                 assert "--no-deps" in command
                 assert "--require-hashes" in command
+
+
+def test_reusable_intel_workflow_checks_out_and_seals_the_requested_connector_revision():
+    data = workflow("intel-wheel.yml")
+    call = data["on"]["workflow_call"]
+    assert call["inputs"]["source-ref"]["type"] == "string"
+    assert call["inputs"]["source-ref"]["required"] == "false"
+    assert call["inputs"]["source-ref"]["default"] == ""
+    steps = data["jobs"]["wheel"]["steps"]
+    checkout = next(
+        step for step in steps if step.get("uses", "").startswith("actions/checkout@")
+    )
+    assert (
+        checkout["with"]["repository"] == "ricardomartins-gravitee/openmaskit-connector"
+    )
+    assert checkout["with"]["ref"] == "${{ inputs.source-ref || github.sha }}"
+    seal = next(
+        step
+        for step in steps
+        if step.get("name") == "Seal wheel against this commit and lockfile"
+    )
+    assert seal["env"]["SOURCE_REVISION"] == "${{ inputs.source-ref || github.sha }}"
 
 
 def test_scanner_downloads_enforce_https_across_redirects():
@@ -165,7 +198,15 @@ def test_durable_library_publication_is_main_only_and_requires_all_acceptance():
     }
     assert publisher["permissions"]["contents"] == "write"
     assert publisher["permissions"]["attestations"] == "write"
-    assert set(jobs["package"]["needs"]) == {"publish", "native-release"}
+    assert set(jobs["release"]["needs"]) == {
+        "test",
+        "image",
+        "quality",
+        "security",
+        "intel-wheel",
+        "native-release",
+        "publish",
+    }
     builder = workflow("intel-wheel.yml")
     assert builder["permissions"]["contents"] == "read"
     assert builder["permissions"]["attestations"] == "read"
@@ -177,6 +218,134 @@ def test_durable_library_publication_is_main_only_and_requires_all_acceptance():
     assert "--clobber" not in commands
     assert '--target "$GITHUB_SHA"' in commands
     assert any("attest-build-provenance@" in s.get("uses", "") for s in steps)
+
+
+def test_connector_artifacts_are_packaged_on_all_platforms_and_released_after_gates():
+    jobs = workflow("validate.yml")["jobs"]
+    test = jobs["test"]
+    assert set(test["strategy"]["matrix"]["os"]) == {
+        "ubuntu-24.04",
+        "macos-26",
+        "macos-15-intel",
+        "windows-2025",
+    }
+    commands = "\n".join(step.get("run", "") for step in test["steps"])
+    assert "scripts/bundle.py" in commands
+    assert "scripts/test_bundle.py" in commands
+    assert "scripts/archive.py" in commands
+    assert "manager_acceptance.py" not in commands
+    assert "swift test" not in commands
+    release = jobs["release"]
+    assert "refs/heads/main" in release["if"]
+    assert "event_name != 'pull_request'" in release["if"]
+    release_commands = "\n".join(step.get("run", "") for step in release["steps"])
+    assert "uv build --no-build-isolation --no-sources" in release_commands
+    assert "--only-group release-build" in release_commands
+    assert "gh release create" in release_commands
+    assert "SHA256SUMS.txt" in release_commands
+    assert "ricardomartins-gravitee/openmaskit-connector" in release_commands
+    assert "git ls-remote" in release_commands
+    assert "Bump the project version" in release_commands
+    assert "connector-v$version" in release_commands
+    attest = next(
+        step
+        for step in test["steps"]
+        if "attest-build-provenance@" in step.get("uses", "")
+    )
+    assert "refs/heads/main" in attest["if"]
+    upload = next(
+        step for step in test["steps"] if "upload-artifact@" in step.get("uses", "")
+    )
+    assert upload["with"]["path"] == "dist/downloads/*.zip"
+    assert "if" not in upload
+    download = next(
+        step
+        for step in release["steps"]
+        if "download-artifact@" in step.get("uses", "")
+    )
+    assert download["with"]["merge-multiple"] == "true"
+
+
+def test_connector_release_metadata_records_published_image_and_is_attested(tmp_path):
+    release = workflow("validate.yml")["jobs"]["release"]
+    steps = release["steps"]
+    metadata_step = next(
+        step
+        for step in steps
+        if step.get("name") == "Record the attested relay image for companion consumers"
+    )
+    assert metadata_step["env"] == {
+        "RELAY_IMAGE": "${{ needs.publish.outputs.image }}",
+        "SOURCE_COMMIT": "${{ github.sha }}",
+    }
+    match = re.search(r"python3 - <<'PY'\n(.*?)\nPY", metadata_step["run"], re.S)
+    assert match
+
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    uv = fake_bin / "uv"
+    uv.write_text("#!/bin/sh\nprintf '0.1.0a1\\n'\n")
+    uv.chmod(0o755)
+    downloads = tmp_path / "downloads"
+    downloads.mkdir()
+    environment = {
+        **os.environ,
+        "PATH": str(fake_bin) + os.pathsep + os.environ.get("PATH", ""),
+        "SOURCE_COMMIT": "a" * 40,
+        "RELAY_IMAGE": "ghcr.io/ricardomartins-gravitee/openmaskit-connector@sha256:"
+        + "b" * 64,
+    }
+    subprocess.run(
+        [sys.executable, "-c", match.group(1)],
+        cwd=tmp_path,
+        env=environment,
+        check=True,
+        timeout=10,
+    )
+    metadata_path = downloads / "connector-release.json"
+    assert json.loads(metadata_path.read_text()) == {
+        "schema": 1,
+        "protocol": 1,
+        "version": "0.1.0a1",
+        "commit": "a" * 40,
+        "relay_image": "ghcr.io/ricardomartins-gravitee/openmaskit-connector@sha256:"
+        + "b" * 64,
+    }
+
+    (downloads / "connector-linux-amd64.zip").write_bytes(b"archive")
+    (tmp_path / "dist/python").mkdir(parents=True)
+    (tmp_path / "dist/python/openmaskit_connector.whl").write_bytes(b"wheel")
+    checksum_step = next(
+        step
+        for step in steps
+        if step.get("name") == "Create checksums for Python and executable releases"
+    )
+    checksum_match = re.search(
+        r"python3 - <<'PY'\n(.*?)\nPY", checksum_step["run"], re.S
+    )
+    assert checksum_match
+    subprocess.run(
+        [sys.executable, "-c", checksum_match.group(1)],
+        cwd=tmp_path,
+        check=True,
+        timeout=10,
+    )
+    checksums = (downloads / "SHA256SUMS.txt").read_text()
+    assert "connector-release.json" in checksums
+    assert "connector-linux-amd64.zip" in checksums
+    assert "openmaskit_connector.whl" in checksums
+
+    attestation = next(
+        step for step in steps if "attest-build-provenance@" in step.get("uses", "")
+    )
+    assert "downloads/connector-release.json" in attestation["with"]["subject-path"]
+    assert "downloads/SHA256SUMS.txt" in attestation["with"]["subject-path"]
+    publish = next(
+        step
+        for step in steps
+        if step.get("name") == "Publish immutable versioned connector release"
+    )
+    assert "downloads/connector-release.json" in publish["run"]
 
 
 def report_summary(path, *, root=None, remove_root=False):

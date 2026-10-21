@@ -20,13 +20,14 @@ from email.parser import BytesParser
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-REPOSITORY = "ricardomartins-gravitee/openmaskit-companion"
+REPOSITORY = "ricardomartins-gravitee/openmaskit-connector"
+BOOTSTRAP_REPOSITORY = "ricardomartins-gravitee/openmaskit-companion"
 MAX_BUNDLE_BYTES = 64 * 1024 * 1024
 
 
 def build_key():
     lock = tomllib.loads((ROOT / "uv.lock").read_text())
-    project = next(p for p in lock["package"] if p["name"] == "openmaskit-companion")
+    project = next(p for p in lock["package"] if p["name"] == "openmaskit-connector")
     pending = [p["name"] for p in project["dev-dependencies"]["intel-build"]]
     selected = {}
     while pending:
@@ -245,15 +246,15 @@ def unpack_bundle(archive, directory):
     prepare(directory)
 
 
-def github_json(path):
+def github_json(path, *, repository=REPOSITORY):
     headers = {
         "Accept": "application/vnd.github+json",
-        "User-Agent": "openmaskit-companion-ci",
+        "User-Agent": "openmaskit-connector-ci",
     }
     if os.environ.get("GH_TOKEN"):
         headers["Authorization"] = "Bearer " + os.environ["GH_TOKEN"]
     request = urllib.request.Request(
-        f"https://api.github.com/repos/{REPOSITORY}/{path}",
+        f"https://api.github.com/repos/{repository}/{path}",
         headers=headers,
     )
     api = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
@@ -270,7 +271,9 @@ def restore_bootstrap(directory):
     pin = json.loads(path.read_text())
     if pin["input_fingerprint"] != build_key():
         return False
-    job = github_json(f"actions/jobs/{int(pin['job_id'])}")
+    job = github_json(
+        f"actions/jobs/{int(pin['job_id'])}", repository=BOOTSTRAP_REPOSITORY
+    )
     if (
         job.get("run_id") != pin["run_id"]
         or job.get("head_sha") != pin["head_sha"]
@@ -278,7 +281,10 @@ def restore_bootstrap(directory):
         or job.get("name") != "intel-wheel / Build and verify Intel dependency"
     ):
         raise ValueError("Bootstrap library producer does not match its reviewed pin")
-    artifacts = github_json(f"actions/runs/{int(pin['run_id'])}/artifacts")["artifacts"]
+    artifacts = github_json(
+        f"actions/runs/{int(pin['run_id'])}/artifacts",
+        repository=BOOTSTRAP_REPOSITORY,
+    )["artifacts"]
     matching = [
         a
         for a in artifacts
@@ -295,7 +301,7 @@ def restore_bootstrap(directory):
             "download",
             str(int(pin["run_id"])),
             "--repo",
-            REPOSITORY,
+            BOOTSTRAP_REPOSITORY,
             "--name",
             "intel-cryptography-wheel",
             "--dir=" + str(directory),
@@ -435,7 +441,10 @@ def main():
     if args.directory.resolve() != directory or directory.is_symlink():
         raise ValueError("Only the fixed CI destination is accepted")
     if args.operation == "seal":
-        seal(directory, os.environ.get("GITHUB_SHA", ""))
+        seal(
+            directory,
+            os.environ.get("SOURCE_REVISION") or os.environ.get("GITHUB_SHA", ""),
+        )
     elif args.operation in ("restore", "restore-release"):
         result = restore(directory, bootstrap_allowed=args.operation == "restore")
         value = "true" if result else "false"
