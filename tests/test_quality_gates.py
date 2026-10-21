@@ -281,16 +281,13 @@ def test_connector_release_metadata_records_published_image_and_is_attested(tmp_
     match = re.search(r"python3 - <<'PY'\n(.*?)\nPY", metadata_step["run"], re.S)
     assert match
 
-    fake_bin = tmp_path / "bin"
-    fake_bin.mkdir()
-    uv = fake_bin / "uv"
-    uv.write_text("#!/bin/sh\nprintf '0.1.0a1\\n'\n")
-    uv.chmod(0o755)
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "fixture"\nversion = "0.1.0a1"\n'
+    )
     downloads = tmp_path / "downloads"
     downloads.mkdir()
     environment = {
         **os.environ,
-        "PATH": str(fake_bin) + os.pathsep + os.environ.get("PATH", ""),
         "SOURCE_COMMIT": "a" * 40,
         "RELAY_IMAGE": "ghcr.io/ricardomartins-gravitee/openmaskit-connector@sha256:"
         + "b" * 64,

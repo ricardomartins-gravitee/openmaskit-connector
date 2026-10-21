@@ -245,13 +245,13 @@ jobs:
           python3 - <<'PY'
           import json
           import os
-          import subprocess
+          import tomllib
           from pathlib import Path
 
           metadata = {
               "schema": 1,
               "protocol": 1,
-              "version": subprocess.check_output(["uv", "version", "--short"], text=True).strip(),
+              "version": tomllib.loads(Path("pyproject.toml").read_text())["project"]["version"],
               "commit": os.environ["SOURCE_COMMIT"],
               "relay_image": os.environ["RELAY_IMAGE"],
           }
