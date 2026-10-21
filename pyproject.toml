@@ -1,6 +1,6 @@
 [project]
 name = "openmaskit-connector"
-version = "0.1.0a1"
+version = "0.1.0a2"
 description = "Portable local MCP connector and private relay for OpenMaskit"
 requires-python = ">=3.12"
 license = "Apache-2.0"
@@ -23,6 +23,7 @@ build-backend = "hatchling.build"
 [dependency-groups]
 dev = [
     "bandit>=1.9.4",
+    "hatchling>=1.27,<2",
     "pip-audit>=2.10.1",
     "pytest>=8,<10",
     "pytest-asyncio>=0.24,<2",
@@ -40,6 +41,9 @@ intel-build = [
 release-build = [
     "hatchling>=1.27,<2",
 ]
+
+[tool.hatch.build.targets.sdist]
+only-include = ["LICENSE", "README.md", "pyproject.toml", "src"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

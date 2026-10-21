@@ -1,9 +1,12 @@
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
+import tarfile
 import tomllib
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -264,6 +267,56 @@ def test_connector_artifacts_are_packaged_on_all_platforms_and_released_after_ga
         if "download-artifact@" in step.get("uses", "")
     )
     assert download["with"]["merge-multiple"] == "true"
+
+
+def test_source_distribution_excludes_ci_downloads(tmp_path):
+    project = tmp_path / "project"
+    project.mkdir()
+    for filename in ("pyproject.toml", "README.md", "LICENSE"):
+        shutil.copy2(ROOT / filename, project / filename)
+    shutil.copytree(ROOT / "src", project / "src")
+
+    downloads = project / "downloads"
+    downloads.mkdir()
+    (downloads / "release-marker.txt").write_text("synthetic release artifact")
+    with zipfile.ZipFile(
+        downloads / "openmaskit-connector-linux-amd64.zip", "w"
+    ) as archive:
+        archive.writestr("openmaskit-connector", b"synthetic executable")
+    (downloads / "connector-release.json").write_text('{"relay_image":"synthetic"}')
+
+    output = tmp_path / "sdist"
+    subprocess.run(
+        [
+            "uv",
+            "build",
+            "--sdist",
+            "--no-build-isolation",
+            "--no-sources",
+            "--python",
+            sys.executable,
+            "--out-dir",
+            str(output),
+            str(project),
+        ],
+        cwd=ROOT,
+        check=True,
+        timeout=120,
+        capture_output=True,
+        text=True,
+    )
+    archives = list(output.glob("*.tar.gz"))
+    assert len(archives) == 1
+    with tarfile.open(archives[0], "r:gz") as archive:
+        members = archive.getnames()
+    assert any(name.endswith("/src/openmaskit_connector/cli.py") for name in members)
+    assert not any(
+        name.startswith("downloads/") or "/downloads/" in name for name in members
+    )
+    assert not any(
+        "release-marker" in name or "openmaskit-connector-linux-amd64" in name
+        for name in members
+    )
 
 
 def test_connector_release_metadata_records_published_image_and_is_attested(tmp_path):

@@ -892,7 +892,7 @@ wheels = [
 
 [[package]]
 name = "openmaskit-connector"
-version = "0.1.0a1"
+version = "0.1.0a2"
 source = { editable = "." }
 dependencies = [
     { name = "httpx" },
@@ -909,6 +909,7 @@ bundle = [
 ]
 dev = [
     { name = "bandit" },
+    { name = "hatchling" },
     { name = "pip-audit" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
@@ -940,6 +941,7 @@ requires-dist = [
 bundle = [{ name = "pyinstaller", specifier = ">=6.16,<7" }]
 dev = [
     { name = "bandit", specifier = ">=1.9.4" },
+    { name = "hatchling", specifier = ">=1.27,<2" },
     { name = "pip-audit", specifier = ">=2.10.1" },
     { name = "pytest", specifier = ">=8,<10" },
     { name = "pytest-asyncio", specifier = ">=0.24,<2" },
