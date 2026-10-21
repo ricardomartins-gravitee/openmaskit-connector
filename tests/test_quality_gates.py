@@ -89,6 +89,9 @@ def test_intel_compilation_is_explicit_isolated_scanned_and_reused_in_same_run()
     test_commands = "\n".join(s.get("run", "") for s in jobs["test"]["steps"])
     assert "scripts/bundle.py" in test_commands
     assert "scripts/test_bundle.py" in test_commands
+    bundle_command = (ROOT / "scripts/bundle.py").read_text()
+    assert '"--copy-metadata"' in bundle_command
+    assert '"openmaskit-connector"' in bundle_command
     assert "desktop/macos" not in test_commands
     assert "manager_acceptance.py" not in test_commands
     builder = workflow("intel-wheel.yml")["jobs"]["wheel"]

@@ -23,6 +23,8 @@ def main():
             "openmaskit-connector",
             "--collect-all",
             "openmaskit_connector",
+            "--copy-metadata",
+            "openmaskit-connector",
             "--collect-submodules",
             "uvicorn",
             str(entry),
