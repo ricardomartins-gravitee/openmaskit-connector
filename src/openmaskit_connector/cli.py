@@ -26,6 +26,9 @@ def parser():
     pair = commands.add_parser("pair")
     pair.add_argument("--endpoint", default=RELAY)
     pair.add_argument(
+        "--ca-file", type=Path, help="Trust this local relay CA for verified HTTPS"
+    )
+    pair.add_argument(
         "--code-stdin",
         action="store_true",
         help="Read the pairing code from stdin instead of prompting",
@@ -52,6 +55,8 @@ def parser():
     relay.add_argument("--state", type=Path, required=True)
     relay.add_argument("--host", default="127.0.0.1")
     relay.add_argument("--port", type=int, default=9495)
+    relay.add_argument("--tls-cert", type=Path)
+    relay.add_argument("--tls-key", type=Path)
     return root
 
 
@@ -76,7 +81,8 @@ def main(argv=None):
                 if args.code_stdin
                 else getpass.getpass("Pairing code: ")
             )
-            result = pair_connector(home, args.endpoint, code)
+            options = {"ca_file": args.ca_file} if args.ca_file is not None else {}
+            result = pair_connector(home, args.endpoint, code, **options)
         elif args.action == "approve":
             raw = json.loads(args.profile.read_text())
             raw["name"] = args.name
@@ -122,6 +128,14 @@ def main(argv=None):
 
             from .relay import create_app
 
+            if bool(args.tls_cert) != bool(args.tls_key):
+                raise ValueError("TLS requires both certificate and private key")
+            tls_options = (
+                {"ssl_certfile": str(args.tls_cert), "ssl_keyfile": str(args.tls_key)}
+                if args.tls_cert
+                else {}
+            )
+
             uvicorn.run(
                 create_app(args.state),
                 host=args.host,
@@ -129,6 +143,7 @@ def main(argv=None):
                 access_log=False,
                 ws_max_size=1_048_576,
                 log_level="warning",
+                **tls_options,
             )
             return
         print(json.dumps(result))

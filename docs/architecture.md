@@ -39,8 +39,12 @@ The proxy credential is distinct from relay-admin and connector credentials.
 OpenMaskit stores its proxy header through its normal encrypted HTTP
 configuration path. Relay requests with a browser Origin are rejected. MCP
 Host validation uses the SDK's DNS-rebinding protection. The relay and
-connector HTTP endpoints are loopback-only in this release. Remote TLS
-deployments require a separate design and acceptance.
+connector HTTP endpoints are loopback-only in this release. Local HTTPS/WSS is supported with an explicitly provisioned certificate and
+trusted CA. Pairing and the host channel verify CA trust, hostname, expiry and
+TLS 1.2 minimum; neither falls back to HTTP after a TLS error. The trust file
+comes from local pairing configuration, never a relay frame. Existing HTTP
+pairings retain their legacy behavior until explicitly upgraded. Remote TLS
+deployments still require a separate design and acceptance.
 
 The host stores exact absolute executable paths, argument arrays, environment
 and working directories in a private file. A relay peer can select only a

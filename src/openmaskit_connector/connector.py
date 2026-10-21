@@ -17,6 +17,7 @@ from websockets.exceptions import InvalidStatus
 
 from .relay import MAX_BYTES, PROTOCOL
 from .state import Profile, identifier, local_endpoint, read_json, write_json
+from .tls import client_context
 
 
 def profiles(home: Path) -> dict[str, Profile]:
@@ -34,6 +35,9 @@ async def channel(home: Path, *, connected: asyncio.Event | None = None):
     approved = profiles(home)
     key = identifier(config["id"])
     url = "ws" + endpoint[4:] + "/connect/" + key
+    ca_file = Path(config["ca_file"]) if "ca_file" in config else None
+    context = client_context(endpoint, ca_file)
+    tls_options = {"ssl": context} if context is not None else {}
     tasks: dict[str, asyncio.Task] = {}
     lock = asyncio.Lock()
     async with connect(
@@ -45,6 +49,7 @@ async def channel(home: Path, *, connected: asyncio.Event | None = None):
         ping_interval=20,
         ping_timeout=20,
         close_timeout=5,
+        **tls_options,
     ) as ws:
 
         async def send(frame):

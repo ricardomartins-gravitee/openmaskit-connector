@@ -23,7 +23,7 @@ FIXTURE = Path(__file__).parent / "fixture_mcp.py"
 
 
 @asynccontextmanager
-async def running_relay(path):
+async def running_relay(path, *, tls=None):
     sock = socket.socket()
     sock.bind(("127.0.0.1", 0))
     sock.listen()
@@ -34,6 +34,7 @@ async def running_relay(path):
             access_log=False,
             log_level="critical",
             ws_max_size=1_048_576,
+            **(tls or {}),
         )
     )
     task = asyncio.create_task(server.serve(sockets=[sock]))
@@ -43,7 +44,8 @@ async def running_relay(path):
                 if task.done():
                     await task
                 await asyncio.sleep(0.01)
-        yield f"http://127.0.0.1:{port}"
+        scheme = "https" if tls else "http"
+        yield f"{scheme}://127.0.0.1:{port}"
     finally:
         server.should_exit = True
         await asyncio.wait_for(task, 15)

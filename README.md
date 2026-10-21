@@ -69,6 +69,26 @@ See [architecture and trust boundaries](docs/architecture.md),
 [security checks](docs/security-checks.md), and the
 [Intel macOS dependency build](docs/intel-wheel.md).
 
+### Verified local TLS
+
+A relay can serve HTTPS and secure WebSockets using an administrator-provisioned
+certificate and private key:
+
+```sh
+openmaskit-connector relay --state /absolute/path/relay.json --tls-cert /absolute/path/server.pem --tls-key /absolute/path/server.key
+openmaskit-connector pair --endpoint https://127.0.0.1:9495 --ca-file /absolute/path/relay-ca.pem
+```
+
+The CA certificate is selected locally, saved with the private pairing state,
+and reused for the secure WebSocket connection. Certificate trust, hostname and
+expiry are verified; TLS 1.2 or newer is required. There is no insecure fallback
+or option to disable verification. The server requires both TLS files.
+The Companion manages certificate provisioning for its own Docker installation;
+standalone administrators supply their own certificate and trust file. Existing
+HTTP loopback pairings remain supported for compatibility and require an explicit
+transport upgrade to gain encryption. HTTPS still accepts loopback endpoints
+only; this does not enable remote deployments.
+
 Host launch settings never come from the relay. MCP messages are not logged or
 persisted for replay. A disconnect can leave a side-effecting call's outcome
 uncertain; callers must not automatically retry such calls. The relay uses

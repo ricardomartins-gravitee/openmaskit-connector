@@ -24,7 +24,7 @@ def test_identifiers(value):
     "url",
     [
         "http://evil.test:9495",
-        "https://127.0.0.1:9495",
+        "https://remote.invalid:9495",
         "http://user@localhost:9",
         "http://localhost:9/path",
         "http://localhost:9?secret=1",

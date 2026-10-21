@@ -29,7 +29,7 @@ def local_endpoint(value: str) -> str:
     except ValueError:
         raise ValueError("Invalid service port") from None
     if (
-        parsed.scheme != "http"
+        parsed.scheme not in {"http", "https"}
         or parsed.hostname not in {"127.0.0.1", "localhost", "::1"}
         or parsed.username is not None
         or parsed.password is not None
@@ -38,12 +38,13 @@ def local_endpoint(value: str) -> str:
         or parsed.path not in {"", "/"}
         or port is None
         or port == 0
-        or any(c.isspace() for c in value)
+        or any(ord(c) < 33 or ord(c) > 126 for c in value)
     ):
-        raise ValueError(
-            "This release supports an explicit HTTP loopback address and port only"
-        )
-    return value.rstrip("/")
+        raise ValueError("Choose an explicit HTTP or HTTPS loopback address and port")
+    host = "127.0.0.1" if parsed.hostname == "localhost" else parsed.hostname
+    if host == "::1":
+        host = "[::1]"
+    return f"{parsed.scheme}://{host}:{port}"
 
 
 class Profile(BaseModel):

@@ -1,6 +1,6 @@
 [project]
 name = "openmaskit-connector"
-version = "0.1.0a3"
+version = "0.1.0a4"
 description = "Portable local MCP connector and private relay for OpenMaskit"
 requires-python = ">=3.12"
 license = "Apache-2.0"
