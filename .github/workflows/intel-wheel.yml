@@ -46,7 +46,7 @@ jobs:
       - name: Download and verify locked upstream source
         run: uv run --frozen --no-sync --no-build python scripts/intel_wheel.py fetch "$RUNNER_TEMP/crypto-build"
       - name: Scan locked upstream dependencies
-        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: fs
           scan-ref: ${{ runner.temp }}/crypto-build/source
@@ -83,7 +83,7 @@ jobs:
       - name: Record embedded OpenSSL for vulnerability scanning
         run: uv run --frozen --no-sync --no-build python scripts/intel_wheel.py sbom "$RUNNER_TEMP/intel-wheel"
       - name: Scan wheel components including embedded OpenSSL
-        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: sbom
           scan-ref: ${{ runner.temp }}/intel-wheel/sbom.json
